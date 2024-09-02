@@ -1,0 +1,20 @@
+FROM kylemanna/openvpn
+
+# Use a newer or more stable repository for apk
+RUN echo "http://dl-cdn.alpinelinux.org/alpine/v3.14/main" > /etc/apk/repositories && \
+    echo "http://dl-cdn.alpinelinux.org/alpine/v3.14/community" >> /etc/apk/repositories
+
+# Install git, curl, python3, and pip
+RUN apk update && apk add --no-cache git curl python3 py3-pip
+
+# Set up the directory for the relay server
+WORKDIR /usr/local/bin/
+
+# Copy the Python script
+COPY relay_server.py /usr/local/bin/
+
+# Ensure the repository is initialized
+RUN git init && git remote add origin https://github.com/yourusername/yourrepository.git
+
+# Set the command to execute the relay server script
+CMD ["python3", "/usr/local/bin/relay_server.py"]
