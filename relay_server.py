@@ -135,9 +135,26 @@ def main():
     else:
         logger.error("Failed to get server IP. Exiting.")
 
+def send_status_update(server_ip):
+    try:
+        central_node_url = "http://relay.brinxai.com:5002/status_update"
+        payload = {
+            "node_ip": server_ip,
+            "status": "Active"
+        }
+        headers = {"Content-Type": "application/json"}
+        response = requests.post(central_node_url, headers=headers, data=json.dumps(payload))
+        response.raise_for_status()
+        logger.debug(f"Successfully sent status update. Server responded with status code: {response.status_code}")
+    except requests.RequestException as e:
+        logger.error(f"Failed to send status update: {e}")
+
+# Add this to your main loop
 if __name__ == '__main__':
+    server_ip = get_server_ip()
     while True:
         check_for_updates()  # Check for updates
         main()  # Run the main script logic
+        send_status_update(server_ip)  # Send status update
         logger.debug(f"Sleeping for {UPDATE_INTERVAL} seconds before checking for updates again.")
         time.sleep(UPDATE_INTERVAL)
