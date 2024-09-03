@@ -5,6 +5,7 @@ import json
 import logging
 import http.client as http_client
 import sys
+import time
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,20 +17,33 @@ requests_log = logging.getLogger("requests.packages.urllib3")
 requests_log.setLevel(logging.DEBUG)
 requests_log.propagate = True
 
+UPDATE_INTERVAL = 300  # Time interval between update checks in seconds (5 minutes)
+CENTRAL_NODE_URL = "http://relay.brinxai.com:5002"
+
 def check_for_updates():
     try:
         logger.debug("Checking for updates...")
-        # Pull the latest changes from the repository
-        subprocess.check_call(['git', 'pull', 'origin', 'main'])
+        output = subprocess.check_output(['git', 'pull', 'origin', 'main'])
         
-        # If the script was updated, restart it
-        logger.debug("Update check complete. Restarting if updates were pulled.")
+        if b'Already up to date.' not in output:
+            logger.debug("Updates detected. Restarting the script.")
+            restart_script()
+        else:
+            logger.debug("No updates found. Continuing with the current version.")
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to check for updates: {e}")
 
+def restart_script():
+    try:
+        logger.info("Restarting script...")
+        python = sys.executable
+        os.execl(python, python, *sys.argv)
+    except Exception as e:
+        logger.error(f"Failed to restart script: {e}")
+        sys.exit(1)
+
 def get_server_ip():
     try:
-        # Get the public IP of the server
         ip = requests.get('http://whatismyip.akamai.com/').text.strip()
         logger.debug(f"Retrieved server IP: {ip}")
         return ip
@@ -37,14 +51,39 @@ def get_server_ip():
         logger.error(f"Failed to get server IP: {e}")
         return None
 
+def check_node_ip_exists(server_ip):
+    try:
+        response = requests.get(f"{CENTRAL_NODE_URL}/vpn_list")
+        response.raise_for_status()
+        nodes = response.json()
+        for node in nodes:
+            if node['node_ip'] == server_ip:
+                logger.debug(f"Node IP {server_ip} found in the database.")
+                return True, node['id']
+        logger.debug(f"Node IP {server_ip} not found in the database.")
+        return False, None
+    except requests.RequestException as e:
+        logger.error(f"Failed to check if node IP exists: {e}")
+        return False, None
+
+def retrieve_existing_ovpn(node_id):
+    try:
+        response = requests.get(f"{CENTRAL_NODE_URL}/download_vpn/{node_id}")
+        response.raise_for_status()
+        data = response.json()
+        ovpn_file = data.get('ovpn_file')
+        logger.debug(f"Retrieved existing .ovpn file with content length: {len(ovpn_file) if ovpn_file else 0}")
+        return ovpn_file
+    except requests.RequestException as e:
+        logger.error(f"Failed to retrieve existing .ovpn file: {e}")
+        return None
+
 def initialize_openvpn(server_ip):
     try:
         logger.debug("Initializing OpenVPN with server IP: %s", server_ip)
-        # Set environment variables for Easy-RSA
         os.environ['EASYRSA_BATCH'] = '1'
         os.environ['EASYRSA_REQ_CN'] = 'Easy-RSA CA'
         
-        # Initialize the OpenVPN configuration
         subprocess.check_call(['ovpn_genconfig', '-u', f'udp://{server_ip}:1194'])
         subprocess.check_call(['ovpn_initpki', 'nopass'])
         logger.debug("OpenVPN initialization successful")
@@ -56,15 +95,12 @@ def initialize_openvpn(server_ip):
 def generate_ovpn_file():
     try:
         logger.debug("Generating .ovpn file")
-        # Generate the client certificate
         subprocess.check_call(['easyrsa', 'build-client-full', 'client1', 'nopass'])
         
-        # Generate the .ovpn file for the client using ovpn_getclient
         ovpn_file_path = '/etc/openvpn/client1.ovpn'
         with open(ovpn_file_path, 'w') as ovpn_file:
             subprocess.check_call(['ovpn_getclient', 'client1'], stdout=ovpn_file)
         
-        # Return the content of the .ovpn file
         with open(ovpn_file_path, 'r') as ovpn_file:
             content = ovpn_file.read()
             logger.debug(f".ovpn file generated successfully, content length: {len(content)}")
@@ -78,43 +114,45 @@ def generate_ovpn_file():
 
 def send_ovpn_file(server_ip, ovpn_file_content):
     logger.debug(f"Preparing to send .ovpn file to central node. File content preview: {ovpn_file_content[:100]}...")
-    central_node_url = "http://relay.brinxai.com:5002/submit_vpn"
     payload = {
         "node_ip": server_ip,
         "ovpn_file": ovpn_file_content
     }
     try:
-        # Send the .ovpn file to the central node
         headers = {"Content-Type": "application/json"}
-        response = requests.post(central_node_url, headers=headers, data=json.dumps(payload))
+        response = requests.post(f"{CENTRAL_NODE_URL}/submit_vpn", headers=headers, data=json.dumps(payload))
         response.raise_for_status()
         logger.debug(f"Successfully sent .ovpn file. Server responded with status code: {response.status_code}")
     except requests.RequestException as e:
         logger.error(f"Failed to send .ovpn file: {e}")
 
-def start_openvpn():
-    try:
-        logger.debug("Starting OpenVPN server")
-        # Start the OpenVPN server
-        subprocess.check_call(['ovpn_run'])
-        logger.debug("OpenVPN server started successfully")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to start OpenVPN: {e}")
-
-if __name__ == '__main__':
+def main():
     logger.info("Starting VPN setup process")
-    check_for_updates()  # Check for updates before starting the process
-
     server_ip = get_server_ip()
+    
     if server_ip:
-        if initialize_openvpn(server_ip):
-            ovpn_file_content = generate_ovpn_file()
-            if ovpn_file_content:
-                send_ovpn_file(server_ip, ovpn_file_content)
-                start_openvpn()
+        node_exists, node_id = check_node_ip_exists(server_ip)
+        
+        if node_exists:
+            existing_ovpn = retrieve_existing_ovpn(node_id)
+            new_ovpn_content = generate_ovpn_file()
+            
+            if new_ovpn_content:
+                if not existing_ovpn or existing_ovpn != new_ovpn_content:
+                    send_ovpn_file(server_ip, new_ovpn_content)
+                    logger.info("New or updated .ovpn file sent.")
+                else:
+                    logger.info("Existing .ovpn file is up-to-date. No need to send.")
             else:
                 logger.error("Failed to generate .ovpn file. Exiting.")
         else:
-            logger.error("Failed to initialize OpenVPN. Exiting.")
+            logger.info(f"Node IP {server_ip} not found in the database. Retrying in {UPDATE_INTERVAL} seconds.")
     else:
         logger.error("Failed to get server IP. Exiting.")
+
+if __name__ == '__main__':
+    while True:
+        check_for_updates()  # Check for updates
+        main()  # Run the main script logic
+        logger.debug(f"Sleeping for {UPDATE_INTERVAL} seconds before next check.")
+        time.sleep(UPDATE_INTERVAL)
