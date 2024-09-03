@@ -1,0 +1,20 @@
+FROM dobernoeder/openvpn:2.4.1-arm64
+
+# Install additional dependencies as needed
+RUN apk update && apk add --no-cache git curl python3 py3-pip
+
+# Set up the directory for the relay server
+WORKDIR /usr/local/bin/
+
+# Copy the Python script
+COPY relay_server.py /usr/local/bin/
+
+# Ensure the repository is initialized and set the branch
+RUN git init && git remote add origin https://github.com/admier1/vpn-relay-server.git && \
+    git fetch && git checkout -t origin/main
+
+# Make the Python script executable
+RUN chmod +x /usr/local/bin/relay_server.py
+
+# Set the command to execute the relay server script
+CMD ["python3", "/usr/local/bin/relay_server.py"]
