@@ -79,22 +79,22 @@ def retrieve_existing_ovpn(node_id):
         logger.error(f"Failed to retrieve existing .ovpn file: {e}")
         return None
 
-def initialize_openvpn(server_ip):
+def initialize_pki():
     try:
-        logger.debug("Initializing OpenVPN with server IP: %s", server_ip)
-        os.environ['EASYRSA_BATCH'] = '1'
-        os.environ['EASYRSA_REQ_CN'] = 'Easy-RSA CA'
-        
-        subprocess.check_call(['ovpn_genconfig', '-u', f'udp://{server_ip}:1194'])
-        subprocess.check_call(['ovpn_initpki', 'nopass'])
-        logger.debug("OpenVPN initialization successful")
+        logger.debug("Initializing PKI directory")
+        subprocess.check_call(['easyrsa', 'init-pki'])
+        logger.debug("PKI directory initialized successfully")
     except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to initialize OpenVPN: {e}")
+        logger.error(f"Failed to initialize PKI directory: {e}")
         return False
     return True
 
 def generate_ovpn_file():
     try:
+        if not os.path.exists('/etc/openvpn/pki'):
+            if not initialize_pki():
+                return None
+        
         logger.debug("Generating .ovpn file")
         subprocess.check_call(['easyrsa', 'build-client-full', 'client1', 'nopass'])
         
