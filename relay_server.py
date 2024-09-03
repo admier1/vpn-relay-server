@@ -18,6 +18,7 @@ requests_log.setLevel(logging.DEBUG)
 requests_log.propagate = True
 
 UPDATE_INTERVAL = 600  # Time interval between update checks in seconds (e.g., 600 seconds = 10 minutes)
+STATUS_INTERVAL = 60  # Time interval between status updates in seconds (e.g., 60 seconds = 1 minute)
 
 def check_for_updates():
     try:
@@ -118,23 +119,6 @@ def start_openvpn():
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to start OpenVPN: {e}")
 
-def main():
-    logger.info("Starting VPN setup process")
-    server_ip = get_server_ip()
-    
-    if server_ip:
-        if initialize_openvpn(server_ip):
-            ovpn_file_content = generate_ovpn_file()
-            if ovpn_file_content:
-                send_ovpn_file(server_ip, ovpn_file_content)
-                start_openvpn()
-            else:
-                logger.error("Failed to generate .ovpn file. Exiting.")
-        else:
-            logger.error("Failed to initialize OpenVPN. Exiting.")
-    else:
-        logger.error("Failed to get server IP. Exiting.")
-
 def send_status_update(server_ip):
     try:
         central_node_url = "http://relay.brinxai.com:5002/status_update"
@@ -149,12 +133,31 @@ def send_status_update(server_ip):
     except requests.RequestException as e:
         logger.error(f"Failed to send status update: {e}")
 
-# Add this to your main loop
-if __name__ == '__main__':
-    server_ip = get_server_ip()
+def main_loop(server_ip):
     while True:
         check_for_updates()  # Check for updates
         main()  # Run the main script logic
-        send_status_update(server_ip)  # Send status update
         logger.debug(f"Sleeping for {UPDATE_INTERVAL} seconds before checking for updates again.")
         time.sleep(UPDATE_INTERVAL)
+
+def status_update_loop(server_ip):
+    while True:
+        send_status_update(server_ip)
+        logger.debug(f"Sleeping for {STATUS_INTERVAL} seconds before sending the next status update.")
+        time.sleep(STATUS_INTERVAL)
+
+if __name__ == '__main__':
+    server_ip = get_server_ip()
+    if server_ip:
+        # Run the main loop and status update loop in parallel
+        from threading import Thread
+        main_thread = Thread(target=main_loop, args=(server_ip,))
+        status_thread = Thread(target=status_update_loop, args=(server_ip,))
+        
+        main_thread.start()
+        status_thread.start()
+        
+        main_thread.join()
+        status_thread.join()
+    else:
+        logger.error("Failed to get server IP. Exiting.")
