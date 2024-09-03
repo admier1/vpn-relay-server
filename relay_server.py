@@ -89,12 +89,28 @@ def initialize_pki():
         return False
     return True
 
+def build_ca():
+    try:
+        logger.debug("Building Certificate Authority (CA)")
+        # The following command assumes non-interactive mode with EASYRSA_BATCH=1
+        subprocess.check_call(['easyrsa', 'build-ca', 'nopass'])
+        logger.debug("CA built successfully")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to build CA: {e}")
+        return False
+    return True
+
 def generate_ovpn_file():
     try:
         if not os.path.exists('/etc/openvpn/pki'):
             if not initialize_pki():
                 return None
         
+        # Build the CA if it doesn't exist
+        if not os.path.exists('/etc/openvpn/pki/ca.crt'):
+            if not build_ca():
+                return None
+
         logger.debug("Generating .ovpn file")
         subprocess.check_call(['easyrsa', 'build-client-full', 'client1', 'nopass'])
         
