@@ -79,41 +79,22 @@ def retrieve_existing_ovpn(node_id):
         logger.error(f"Failed to retrieve existing .ovpn file: {e}")
         return None
 
-def initialize_pki():
+def initialize_openvpn(server_ip):
     try:
-        logger.debug("Initializing PKI directory")
-        subprocess.check_call(['easyrsa', 'init-pki'])
-        logger.debug("PKI directory initialized successfully")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to initialize PKI directory: {e}")
-        return False
-    return True
-
-def build_ca():
-    try:
-        logger.debug("Building Certificate Authority (CA)")
-        # Set the environment variable for Common Name to avoid interactive prompt
+        logger.debug("Initializing OpenVPN with server IP: %s", server_ip)
         os.environ['EASYRSA_BATCH'] = '1'
-        os.environ['EASYRSA_REQ_CN'] = 'Relay Server CA'
-
-        subprocess.check_call(['easyrsa', 'build-ca', 'nopass'])
-        logger.debug("CA built successfully")
+        os.environ['EASYRSA_REQ_CN'] = 'Easy-RSA CA'
+        
+        subprocess.check_call(['ovpn_genconfig', '-u', f'udp://{server_ip}:1194'])
+        subprocess.check_call(['ovpn_initpki', 'nopass'])
+        logger.debug("OpenVPN initialization successful")
     except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to build CA: {e}")
+        logger.error(f"Failed to initialize OpenVPN: {e}")
         return False
     return True
 
 def generate_ovpn_file():
     try:
-        if not os.path.exists('/etc/openvpn/pki'):
-            if not initialize_pki():
-                return None
-        
-        # Build the CA if it doesn't exist
-        if not os.path.exists('/etc/openvpn/pki/ca.crt'):
-            if not build_ca():
-                return None
-
         logger.debug("Generating .ovpn file")
         subprocess.check_call(['easyrsa', 'build-client-full', 'client1', 'nopass'])
         
@@ -149,8 +130,8 @@ def send_ovpn_file(server_ip, ovpn_file_content):
 def check_openvpn_status():
     try:
         logger.debug("Checking OpenVPN status")
-        status_output = subprocess.check_output(['pgrep', '-x', 'openvpn']).strip()
-        status = "Active" if status_output else "Inactive"
+        status_output = subprocess.check_output(['systemctl', 'is-active', 'openvpn'], text=True).strip()
+        status = "Active" if status_output == "active" else "Inactive"
         logger.debug(f"OpenVPN status: {status}")
         return status
     except subprocess.CalledProcessError as e:
