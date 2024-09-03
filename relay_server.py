@@ -102,7 +102,7 @@ def generate_ovpn_file():
         with open(ovpn_file_path, 'w') as ovpn_file:
             subprocess.check_call(['ovpn_getclient', 'client1'], stdout=ovpn_file)
         
-        with open(ovpn_file_path, 'r') as ovpn_file):
+        with open(ovpn_file_path, 'r') as ovpn_file:
             content = ovpn_file.read()
             logger.debug(f".ovpn file generated successfully, content length: {len(content)}")
             return content
@@ -130,9 +130,8 @@ def send_ovpn_file(server_ip, ovpn_file_content):
 def check_openvpn_status():
     try:
         logger.debug("Checking OpenVPN status")
-        # Using 'ps' to check if OpenVPN process is running
-        status_output = subprocess.check_output(['ps', '-C', 'openvpn', '-o', 'comm='], text=True).strip()
-        status = "Active" if status_output == "openvpn" else "Inactive"
+        status_output = subprocess.check_output(['systemctl', 'is-active', 'openvpn'], text=True).strip()
+        status = "Active" if status_output == "active" else "Inactive"
         logger.debug(f"OpenVPN status: {status}")
         return status
     except subprocess.CalledProcessError as e:
