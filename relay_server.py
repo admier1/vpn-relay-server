@@ -6,6 +6,7 @@ import logging
 import http.client as http_client
 import sys
 import time
+from threading import Thread
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -119,6 +120,23 @@ def start_openvpn():
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to start OpenVPN: {e}")
 
+def main():
+    logger.info("Starting VPN setup process")
+    server_ip = get_server_ip()
+    
+    if server_ip:
+        if initialize_openvpn(server_ip):
+            ovpn_file_content = generate_ovpn_file()
+            if ovpn_file_content:
+                send_ovpn_file(server_ip, ovpn_file_content)
+                start_openvpn()
+            else:
+                logger.error("Failed to generate .ovpn file. Exiting.")
+        else:
+            logger.error("Failed to initialize OpenVPN. Exiting.")
+    else:
+        logger.error("Failed to get server IP. Exiting.")
+
 def send_status_update(server_ip):
     try:
         central_node_url = "http://relay.brinxai.com:5002/status_update"
@@ -150,7 +168,6 @@ if __name__ == '__main__':
     server_ip = get_server_ip()
     if server_ip:
         # Run the main loop and status update loop in parallel
-        from threading import Thread
         main_thread = Thread(target=main_loop, args=(server_ip,))
         status_thread = Thread(target=status_update_loop, args=(server_ip,))
         
