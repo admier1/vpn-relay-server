@@ -130,8 +130,8 @@ def send_ovpn_file(server_ip, ovpn_file_content):
 def check_openvpn_status():
     try:
         logger.debug("Checking OpenVPN status")
-        status_output = subprocess.check_output(['systemctl', 'is-active', 'openvpn'], text=True).strip()
-        status = "Active" if status_output == "active" else "Inactive"
+        status_output = subprocess.check_output(['pgrep', '-x', 'openvpn']).strip()
+        status = "Active" if status_output else "Inactive"
         logger.debug(f"OpenVPN status: {status}")
         return status
     except subprocess.CalledProcessError as e:
