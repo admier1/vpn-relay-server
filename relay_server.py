@@ -4,6 +4,7 @@ import requests
 import json
 import logging
 import http.client as http_client
+import sys
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,16 +16,16 @@ requests_log = logging.getLogger("requests.packages.urllib3")
 requests_log.setLevel(logging.DEBUG)
 requests_log.propagate = True
 
-def update_script():
+def check_for_updates():
     try:
-        logger.info("Checking for updates in the repository...")
-        # Pull the latest changes from the Git repository
-        subprocess.check_call(['git', 'pull'], cwd='/usr/local/bin/')
-        logger.info("Repository updated successfully.")
+        logger.debug("Checking for updates...")
+        # Pull the latest changes from the repository
+        subprocess.check_call(['git', 'pull', 'origin', 'main'])
+        
+        # If the script was updated, restart it
+        logger.debug("Update check complete. Restarting if updates were pulled.")
     except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to update script: {e}")
-    except Exception as e:
-        logger.error(f"An error occurred during update: {e}")
+        logger.error(f"Failed to check for updates: {e}")
 
 def get_server_ip():
     try:
@@ -77,7 +78,7 @@ def generate_ovpn_file():
 
 def send_ovpn_file(server_ip, ovpn_file_content):
     logger.debug(f"Preparing to send .ovpn file to central node. File content preview: {ovpn_file_content[:100]}...")
-    central_node_url = "http://engine.brinxai.com:5002/submit_vpn"
+    central_node_url = "http://relay.brinxai.com:5002/submit_vpn"
     payload = {
         "node_ip": server_ip,
         "ovpn_file": ovpn_file_content
@@ -101,10 +102,9 @@ def start_openvpn():
         logger.error(f"Failed to start OpenVPN: {e}")
 
 if __name__ == '__main__':
-    # Check for updates before running the main logic
-    update_script()
-    
     logger.info("Starting VPN setup process")
+    check_for_updates()  # Check for updates before starting the process
+
     server_ip = get_server_ip()
     if server_ip:
         if initialize_openvpn(server_ip):
