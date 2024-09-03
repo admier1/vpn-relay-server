@@ -92,7 +92,10 @@ def initialize_pki():
 def build_ca():
     try:
         logger.debug("Building Certificate Authority (CA)")
-        # The following command assumes non-interactive mode with EASYRSA_BATCH=1
+        # Set the environment variable for Common Name to avoid interactive prompt
+        os.environ['EASYRSA_BATCH'] = '1'
+        os.environ['EASYRSA_REQ_CN'] = 'Relay Server CA'
+
         subprocess.check_call(['easyrsa', 'build-ca', 'nopass'])
         logger.debug("CA built successfully")
     except subprocess.CalledProcessError as e:
