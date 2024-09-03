@@ -18,7 +18,6 @@ requests_log.setLevel(logging.DEBUG)
 requests_log.propagate = True
 
 UPDATE_INTERVAL = 300  # Time interval between update checks in seconds (5 minutes)
-STATUS_UPDATE_INTERVAL = 60  # Time interval between status updates in seconds (1 minute)
 CENTRAL_NODE_URL = "http://relay.brinxai.com:5002"
 
 def check_for_updates():
@@ -127,30 +126,6 @@ def send_ovpn_file(server_ip, ovpn_file_content):
     except requests.RequestException as e:
         logger.error(f"Failed to send .ovpn file: {e}")
 
-def check_openvpn_status():
-    try:
-        logger.debug("Checking OpenVPN status")
-        status_output = subprocess.check_output(['systemctl', 'is-active', 'openvpn'], text=True).strip()
-        status = "Active" if status_output == "active" else "Inactive"
-        logger.debug(f"OpenVPN status: {status}")
-        return status
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to check OpenVPN status: {e}")
-        return "Inactive"
-
-def send_status_update(server_ip, status):
-    payload = {
-        "node_ip": server_ip,
-        "status": status
-    }
-    try:
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(f"{CENTRAL_NODE_URL}/update_status", headers=headers, data=json.dumps(payload))
-        response.raise_for_status()
-        logger.debug(f"Successfully sent status update. Server responded with status code: {response.status_code}")
-    except requests.RequestException as e:
-        logger.error(f"Failed to send status update: {e}")
-
 def main():
     logger.info("Starting VPN setup process")
     server_ip = get_server_ip()
@@ -176,12 +151,8 @@ def main():
         logger.error("Failed to get server IP. Exiting.")
 
 if __name__ == '__main__':
-    server_ip = get_server_ip()
-    if server_ip:
-        while True:
-            check_for_updates()  # Check for updates
-            main()  # Run the main script logic
-            status = check_openvpn_status()  # Check OpenVPN status
-            send_status_update(server_ip, status)  # Send status update to the central server
-            logger.debug(f"Sleeping for {STATUS_UPDATE_INTERVAL} seconds before next status update.")
-            time.sleep(STATUS_UPDATE_INTERVAL)
+    while True:
+        check_for_updates()  # Check for updates
+        main()  # Run the main script logic
+        logger.debug(f"Sleeping for {UPDATE_INTERVAL} seconds before next check.")
+        time.sleep(UPDATE_INTERVAL)
